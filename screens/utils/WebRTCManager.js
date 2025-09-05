@@ -8,6 +8,7 @@ import {
   RTCAudioSession,
 } from "react-native-webrtc"
 import { Platform, PermissionsAndroid } from "react-native"
+import ConfigManager from './ConfigManager'
 
 class WebRTCManager {
   constructor() {
@@ -35,7 +36,7 @@ class WebRTCManager {
         VoiceActivityDetection: true,
       },
     }
-    this.serverUrl = "http://10.3.242.27:8010/offer"
+    this.serverUrl = null // 将通过ConfigManager动态获取
   }
 
   // 初始化 WebRTC 相关配置
@@ -331,7 +332,8 @@ class WebRTCManager {
 
       // 发送 offer 到服务器
       console.log("正在发送offer到服务器...")
-      const response = await fetch(this.serverUrl, {
+      const serverUrl = ConfigManager.getWebRTCServerUrl();
+      const response = await fetch(serverUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -17,6 +17,7 @@ import {
 import Microphone from "./Microphone"
 import Icon from "react-native-vector-icons/Ionicons"
 import TypingIndicator from "../utils/TypingIndicator"
+import ConfigManager from "../utils/ConfigManager"
 const { width, height } = Dimensions.get("window")
 
 const ChatView = forwardRef(({ 
@@ -180,7 +181,8 @@ const ChatView = forwardRef(({
     console.log("发送给服务器的文本：", input.trim())
 
     try {
-      const response = await fetch("http://10.3.242.27:8010/human", {
+      const digitalHumanUrl = ConfigManager.getDigitalHumanUrl();
+      const response = await fetch(`${digitalHumanUrl}/human`, {
         body: JSON.stringify({
           text: input.trim(),
           type: "chat",
