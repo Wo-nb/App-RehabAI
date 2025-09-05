@@ -2,10 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, TextInput, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Alert } from 'react-native';
 import Icon from "react-native-vector-icons/Ionicons";
 import { LineChart } from 'react-native-chart-kit';
+import ConfigManager from '../utils/ConfigManager';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const API_BASE_URL = "https://yfvideo.hf.free4inno.com"
 
 const Admin = ({isAdmin, setIsAdmin}) => {
     const [showChat, setShowChat] = useState(false);
@@ -16,6 +15,16 @@ const Admin = ({isAdmin, setIsAdmin}) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [selectedChats, setSelectedChats] = useState([]);
     const [dateInput, setDateInput] = useState('');
+    // 配置相关状态
+    const [showConfig, setShowConfig] = useState(false);
+    const [apiBaseUrl, setApiBaseUrl] = useState('');
+    const [digitalHumanUrl, setDigitalHumanUrl] = useState('');
+    const [configLoaded, setConfigLoaded] = useState(false);
+    // URL测试状态
+    const [testingApiUrl, setTestingApiUrl] = useState(false);
+    const [testingDigitalHumanUrl, setTestingDigitalHumanUrl] = useState(false);
+    const [apiUrlTestResult, setApiUrlTestResult] = useState(null);
+    const [digitalHumanUrlTestResult, setDigitalHumanUrlTestResult] = useState(null);
     
     const scrollViewRef = useRef(null);
     const chatDetailRef = useRef(null);
@@ -24,16 +33,29 @@ const Admin = ({isAdmin, setIsAdmin}) => {
     const ACCURACY_COLOR = 'rgba(67, 97, 238, 1)';
     const FLUENCY_COLOR = 'rgba(76, 201, 240, 1)';
 
+    // 初始化配置管理器
     useEffect(() => {
-        if (isLoggedIn) {
+        const initConfig = async () => {
+            await ConfigManager.initialize();
+            const config = ConfigManager.getAll();
+            setApiBaseUrl(config.API_BASE_URL);
+            setDigitalHumanUrl(config.DIGITAL_HUMAN_URL);
+            setConfigLoaded(true);
+        };
+        initConfig();
+    }, []);
+
+    useEffect(() => {
+        if (isLoggedIn && configLoaded) {
             fetchChatData();
         }
-    }, [isLoggedIn]);
+    }, [isLoggedIn, configLoaded]);
 
     // 获取某个特定反馈的聊天记录
     const fetchChatMessages = async (feedbackId) => {
         try {
-            const response = await fetch(`http://192.168.177.27:8000/api/feedback/${feedbackId}/`, {
+            const baseUrl = ConfigManager.getApiBaseUrl();
+            const response = await fetch(`${baseUrl}/api/feedback/${feedbackId}/`, {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
@@ -53,8 +75,8 @@ const Admin = ({isAdmin, setIsAdmin}) => {
 
     const fetchChatData = async () => {
         try {
-            // ${API_BASE_URL}/api/feedback/
-            const response = await fetch("http://192.168.177.27:8000/api/feedback/", {
+            const baseUrl = ConfigManager.getApiBaseUrl();
+            const response = await fetch(`${baseUrl}/api/feedback/`, {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
@@ -149,6 +171,150 @@ const Admin = ({isAdmin, setIsAdmin}) => {
             setIsLoggedIn(true);
         } else {
             alert('用户名或密码错误！');
+        }
+    };
+
+    // 保存配置
+    const handleSaveConfig = async () => {
+        try {
+            const errors = ConfigManager.validateConfig({
+                API_BASE_URL: apiBaseUrl,
+                DIGITAL_HUMAN_URL: digitalHumanUrl
+            });
+            
+            if (errors.length > 0) {
+                Alert.alert('配置错误', errors.join('\n'));
+                return;
+            }
+
+            await ConfigManager.setMultiple({
+                API_BASE_URL: apiBaseUrl,
+                DIGITAL_HUMAN_URL: digitalHumanUrl
+            });
+
+            Alert.alert('成功', '配置已保存');
+            setShowConfig(false);
+        } catch (error) {
+            console.error('保存配置失败:', error);
+            Alert.alert('错误', '保存配置失败，请稍后重试');
+        }
+    };
+
+    // 重置配置到默认值
+    const handleResetConfig = async () => {
+        try {
+            await ConfigManager.resetToDefaults();
+            const config = ConfigManager.getAll();
+            setApiBaseUrl(config.API_BASE_URL);
+            setDigitalHumanUrl(config.DIGITAL_HUMAN_URL);
+            // 清除测试结果
+            setApiUrlTestResult(null);
+            setDigitalHumanUrlTestResult(null);
+            Alert.alert('成功', '配置已重置为默认值');
+        } catch (error) {
+            console.error('重置配置失败:', error);
+            Alert.alert('错误', '重置配置失败，请稍后重试');
+        }
+    };
+
+    // 测试API URL
+    const testApiUrl = async () => {
+        if (!apiBaseUrl.trim()) {
+            Alert.alert('错误', '请先输入API基础URL');
+            return;
+        }
+
+        setTestingApiUrl(true);
+        setApiUrlTestResult(null);
+
+        try {
+            // 测试API连接 - 尝试访问反馈接口
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+
+            const response = await fetch(`${apiBaseUrl}/api/feedback/`, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                setApiUrlTestResult({ success: true, message: '连接成功' });
+            } else {
+                setApiUrlTestResult({ 
+                    success: false, 
+                    message: `连接失败 (${response.status}: ${response.statusText})` 
+                });
+            }
+        } catch (error) {
+            let errorMessage = '连接失败';
+            if (error.name === 'AbortError') {
+                errorMessage = '连接超时 (10秒)';
+            } else if (error.message.includes('Network request failed')) {
+                errorMessage = '网络请求失败';
+            } else {
+                errorMessage = `连接错误: ${error.message}`;
+            }
+            setApiUrlTestResult({ success: false, message: errorMessage });
+        } finally {
+            setTestingApiUrl(false);
+        }
+    };
+
+    // 测试数字人URL
+    const testDigitalHumanUrl = async () => {
+        if (!digitalHumanUrl.trim()) {
+            Alert.alert('错误', '请先输入数字人URL');
+            return;
+        }
+
+        setTestingDigitalHumanUrl(true);
+        setDigitalHumanUrlTestResult(null);
+
+        try {
+            // 测试数字人服务连接 - 尝试访问offer接口
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+
+            const response = await fetch(`${digitalHumanUrl}/offer`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sdp: "test",
+                    type: "offer",
+                }),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok || response.status === 400) {
+                // 400错误通常意味着服务可访问但请求格式不正确，这对测试来说是可接受的
+                setDigitalHumanUrlTestResult({ success: true, message: '连接成功' });
+            } else {
+                setDigitalHumanUrlTestResult({ 
+                    success: false, 
+                    message: `连接失败 (${response.status}: ${response.statusText})` 
+                });
+            }
+        } catch (error) {
+            let errorMessage = '连接失败';
+            if (error.name === 'AbortError') {
+                errorMessage = '连接超时 (10秒)';
+            } else if (error.message.includes('Network request failed')) {
+                errorMessage = '网络请求失败';
+            } else {
+                errorMessage = `连接错误: ${error.message}`;
+            }
+            setDigitalHumanUrlTestResult({ success: false, message: errorMessage });
+        } finally {
+            setTestingDigitalHumanUrl(false);
         }
     };
 
@@ -254,16 +420,24 @@ const Admin = ({isAdmin, setIsAdmin}) => {
                     <View style={styles.dataContainer}>
                         <View style={styles.header}>
                             <Text style={styles.title}>对话数据分析</Text>
-                            <TouchableOpacity 
-                                style={styles.logoutButton} 
-                                onPress={() => {
-                                    setIsLoggedIn(false);
-                                    setUsername('');
-                                    setPassword('');
-                                }}
-                            >
-                                <Icon name="log-out-outline" size={24} color="#666" />
-                            </TouchableOpacity>
+                            <View style={styles.headerButtons}>
+                                <TouchableOpacity 
+                                    style={styles.configButton} 
+                                    onPress={() => setShowConfig(true)}
+                                >
+                                    <Icon name="settings-outline" size={24} color="#666" />
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={styles.logoutButton} 
+                                    onPress={() => {
+                                        setIsLoggedIn(false);
+                                        setUsername('');
+                                        setPassword('');
+                                    }}
+                                >
+                                    <Icon name="log-out-outline" size={24} color="#666" />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <ScrollView ref={scrollViewRef} style={styles.scrollContainer}
                             nestedScrollEnabled={true}>
@@ -399,6 +573,139 @@ const Admin = ({isAdmin, setIsAdmin}) => {
                     </View>
                 )}
             </View>
+            
+            {/* 配置Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={showConfig}
+                onRequestClose={() => setShowConfig(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.configContainer}>
+                        <View style={styles.configHeader}>
+                            <TouchableOpacity 
+                                style={styles.backButton} 
+                                onPress={() => setShowConfig(false)}
+                            >
+                                <Icon name="close-outline" size={24} color="#666" />
+                            </TouchableOpacity>
+                            <Text style={styles.title}>系统配置</Text>
+                        </View>
+                        
+                        <ScrollView style={styles.configScrollContainer}>
+                            <View style={styles.configSection}>
+                                <Text style={styles.configSectionTitle}>大模型URL</Text>
+                                <Text style={styles.configDescription}>大模型的API地址</Text>
+                                <View style={styles.urlInputContainer}>
+                                    <TextInput
+                                        style={[styles.configInput, styles.urlInput]}
+                                        placeholder="例如: http://192.168.1.100:8000"
+                                        value={apiBaseUrl}
+                                        onChangeText={(text) => {
+                                            setApiBaseUrl(text);
+                                            setApiUrlTestResult(null); // 清除之前的测试结果
+                                        }}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                    <TouchableOpacity 
+                                        style={styles.testButton} 
+                                        onPress={testApiUrl}
+                                        disabled={testingApiUrl || !apiBaseUrl.trim()}
+                                    >
+                                        {testingApiUrl ? (
+                                            <ActivityIndicator size="small" color="#666" />
+                                        ) : (
+                                            <Icon name="checkmark-circle-outline" size={20} color="#666" />
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                                {apiUrlTestResult && (
+                                    <View style={[
+                                        styles.testResult,
+                                        apiUrlTestResult.success ? styles.testSuccess : styles.testError
+                                    ]}>
+                                        <Icon 
+                                            name={apiUrlTestResult.success ? "checkmark-circle" : "close-circle"} 
+                                            size={16} 
+                                            color={apiUrlTestResult.success ? "#4caf50" : "#f44336"} 
+                                        />
+                                        <Text style={[
+                                            styles.testResultText,
+                                            { color: apiUrlTestResult.success ? "#4caf50" : "#f44336" }
+                                        ]}>
+                                            {apiUrlTestResult.message}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                            
+                            <View style={styles.configSection}>
+                                <Text style={styles.configSectionTitle}>数字人URL</Text>
+                                <Text style={styles.configDescription}>数字人服务的地址</Text>
+                                <View style={styles.urlInputContainer}>
+                                    <TextInput
+                                        style={[styles.configInput, styles.urlInput]}
+                                        placeholder="例如: http://192.168.1.100:8010"
+                                        value={digitalHumanUrl}
+                                        onChangeText={(text) => {
+                                            setDigitalHumanUrl(text);
+                                            setDigitalHumanUrlTestResult(null); // 清除之前的测试结果
+                                        }}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                    <TouchableOpacity 
+                                        style={styles.testButton} 
+                                        onPress={testDigitalHumanUrl}
+                                        disabled={testingDigitalHumanUrl || !digitalHumanUrl.trim()}
+                                    >
+                                        {testingDigitalHumanUrl ? (
+                                            <ActivityIndicator size="small" color="#666" />
+                                        ) : (
+                                            <Icon name="checkmark-circle-outline" size={20} color="#666" />
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                                {digitalHumanUrlTestResult && (
+                                    <View style={[
+                                        styles.testResult,
+                                        digitalHumanUrlTestResult.success ? styles.testSuccess : styles.testError
+                                    ]}>
+                                        <Icon 
+                                            name={digitalHumanUrlTestResult.success ? "checkmark-circle" : "close-circle"} 
+                                            size={16} 
+                                            color={digitalHumanUrlTestResult.success ? "#4caf50" : "#f44336"} 
+                                        />
+                                        <Text style={[
+                                            styles.testResultText,
+                                            { color: digitalHumanUrlTestResult.success ? "#4caf50" : "#f44336" }
+                                        ]}>
+                                            {digitalHumanUrlTestResult.message}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                            
+                            <View style={styles.configButtonContainer}>
+                                <TouchableOpacity style={styles.resetButton} onPress={handleResetConfig}>
+                                    <Text style={styles.resetButtonText}>重置为默认</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.saveConfigButton} onPress={handleSaveConfig}>
+                                    <Text style={styles.saveConfigButtonText}>保存配置</Text>
+                                </TouchableOpacity>
+                            </View>
+                            
+                            <View style={styles.configInfo}>
+                                <Text style={styles.configInfoText}>
+                                    注意：修改配置后，应用将使用新的URL进行所有网络请求。请确保URL格式正确且服务可访问。
+                                </Text>
+                            </View>
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </Modal>
     );
 };
@@ -672,6 +979,107 @@ const styles = StyleSheet.create({
     },
     selectedDateButtonText: {
         color: 'white',
+    },
+    // 配置相关样式
+    headerButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    configButton: {
+        padding: SCREEN_WIDTH * 0.02,
+        borderRadius: 8,
+        backgroundColor: '#f5f5f5',
+        marginRight: SCREEN_WIDTH * 0.02,
+    },
+    configContainer: {
+        width: SCREEN_WIDTH * 0.9,
+        height: SCREEN_HEIGHT * 0.75,
+        backgroundColor: 'white',
+        borderRadius: 15,
+        overflow: 'hidden',
+        alignSelf: 'center',
+    },
+    configHeader: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: SCREEN_WIDTH * 0.04,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        position: 'relative',
+    },
+    configScrollContainer: {
+        flex: 1,
+        padding: SCREEN_WIDTH * 0.04,
+    },
+    configSection: {
+        marginBottom: SCREEN_HEIGHT * 0.025,
+    },
+    configSectionTitle: {
+        fontSize: Math.min(SCREEN_WIDTH * 0.04, 16),
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: SCREEN_HEIGHT * 0.005,
+    },
+    configDescription: {
+        fontSize: Math.min(SCREEN_WIDTH * 0.035, 14),
+        color: '#666',
+        marginBottom: SCREEN_HEIGHT * 0.01,
+        lineHeight: Math.min(SCREEN_WIDTH * 0.05, 20),
+    },
+    configInput: {
+        width: '100%',
+        height: SCREEN_HEIGHT * 0.06,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+        paddingHorizontal: SCREEN_WIDTH * 0.04,
+        backgroundColor: 'white',
+        fontSize: Math.min(SCREEN_WIDTH * 0.035, 14),
+    },
+    configButtonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: SCREEN_HEIGHT * 0.02,
+        marginBottom: SCREEN_HEIGHT * 0.02,
+    },
+    resetButton: {
+        backgroundColor: '#ff6b6b',
+        paddingVertical: SCREEN_HEIGHT * 0.015,
+        paddingHorizontal: SCREEN_WIDTH * 0.06,
+        borderRadius: 8,
+        flex: 0.45,
+        alignItems: 'center',
+    },
+    resetButtonText: {
+        color: 'white',
+        fontSize: Math.min(SCREEN_WIDTH * 0.035, 14),
+        fontWeight: 'bold',
+    },
+    saveConfigButton: {
+        backgroundColor: '#4361ee',
+        paddingVertical: SCREEN_HEIGHT * 0.015,
+        paddingHorizontal: SCREEN_WIDTH * 0.06,
+        borderRadius: 8,
+        flex: 0.45,
+        alignItems: 'center',
+    },
+    saveConfigButtonText: {
+        color: 'white',
+        fontSize: Math.min(SCREEN_WIDTH * 0.035, 14),
+        fontWeight: 'bold',
+    },
+    configInfo: {
+        backgroundColor: '#f8f9fa',
+        padding: SCREEN_WIDTH * 0.04,
+        borderRadius: 8,
+        marginTop: SCREEN_HEIGHT * 0.01,
+    },
+    configInfoText: {
+        fontSize: Math.min(SCREEN_WIDTH * 0.03, 12),
+        color: '#666',
+        lineHeight: Math.min(SCREEN_WIDTH * 0.045, 18),
+        textAlign: 'center',
     },
 });
 

@@ -2,9 +2,13 @@
 
 // RealtimeSpeechRecognition.js
 import { useEffect, useState, useRef } from "react"
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from "react-native"
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native"
 import WebSocketManager from "../utils/WebSocketManager"
 import RecorderManager from "../utils/RecorderManager"
+
+// === 需要你配置的两个量 ===
+const REGION = "cn-shanghai"       // 你的项目所在地域，例：cn-beijing / cn-shanghai / ap-southeast-1
+const APPKEY = "YOUR_ALIBABA_APPKEY" // 阿里云控制台创建项目的 AppKey
 
 const RealtimeSpeechRecognition = () => {
   const [recording, setRecording] = useState(false)
@@ -13,81 +17,149 @@ const RealtimeSpeechRecognition = () => {
   const [isConnected, setIsConnected] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const scrollViewRef = useRef(null)
+  const tokenRef = useRef(null)
 
   useEffect(() => {
-    const initRecorder = async () => {
-      await RecorderManager.init()
+      const initRecorder = async () => {
+        await RecorderManager.init?.()
+        // 若 RecorderManager 支持数据回调，则把音频二进制直接推给 WS
+        // 约定：输出 16k 单声道 PCM Int16（ArrayBuffer / Uint8Array 皆可）
+        if (RecorderManager.setOnDataCallback) {
+          RecorderManager.setOnDataCallback((pcmChunk) => {
+            WebSocketManager.sendAudio(pcmChunk)
+          })
+        }
+      }
+      initRecorder()
+
+      return () => {
+        RecorderManager.cleanup?.()
+        WebSocketManager.close()
+      }
+    }, [])
+
+    useEffect(() => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollToEnd({ animated: true })
+      }
+    }, [result])
+
+    const fetchToken = async () => {
+      // 重要：token 必须由你后端安全签发，这里只是示例
+      const resp = await fetch("https://YOUR_BACKEND.example.com/ali-nls/token")
+      if (!resp.ok) throw new Error("获取 token 失败")
+      const { token } = await resp.json()
+      return token
     }
 
-    initRecorder()
-
-    return () => {
-      RecorderManager.cleanup()
-      WebSocketManager.close()
+    const connect = async () => {
+      try {
+        setIsLoading(true)
+        // 1) 获取临时 token
+        tokenRef.current = await fetchToken()
+        const url = `wss://nls-gateway.${REGION}.aliyuncs.com/ws/v1?token=${encodeURIComponent(tokenRef.current)}`
+        // 2) 连接
+        const ret = WebSocketManager.connect(url, handleJsonMessage, handleConnState)
+        if (ret === 1) {
+          setStatus("正在连接ASR服务器，请等待...")
+        } else {
+          throw new Error("连接失败，请检查 ASR 地址")
+        }
+      } catch (e) {
+        console.error(e)
+        setStatus(e.message || "连接失败")
+        setIsLoading(false)
+        Alert.alert("连接失败", (e && e.message) || "请检查网络/鉴权")
+      }
     }
-  }, [])
 
-  useEffect(() => {
-    // Scroll to bottom when result changes
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({ animated: true })
+    const startRecording = async () => {
+      try {
+        setResult("")
+        // 先发 Start 指令，再开始推音频
+        WebSocketManager.sendStart(APPKEY, {
+          // 根据录音实际编码设置：常用 PCM 16k
+          format: "pcm",
+          sample_rate: 16000,
+          enable_intermediate_result: true,
+          enable_punctuation_prediction: true,
+          enable_inverse_text_normalization: true
+        })
+        await RecorderManager.start()
+        setRecording(true)
+        setStatus("录音中...")
+      } catch (e) {
+        console.error("开始录音失败：", e)
+        setStatus("开始录音失败")
+        Alert.alert("错误", "开始录音失败：" + (e?.message || ""))
+      }
     }
-  }, [result])
 
-  const connect = () => {
-    setIsLoading(true)
-    const ret = WebSocketManager.connect("wss://www.funasr.com:10095/", handleJsonMessage, handleConnState)
+    const stopRecording = async () => {
+      try {
+        await RecorderManager.stop()
+        // 停止后发 Stop 指令
+        WebSocketManager.sendStop(APPKEY)
+        setRecording(false)
+        setStatus("发送完数据,请等候,正在识别...")
+        // 等服务端返回 Completed/或自行延迟后关闭
+        setTimeout(() => {
+          WebSocketManager.close()
+          setStatus("请点击连接")
+          setIsConnected(false)
+        }, 3000)
+      } catch (e) {
+        console.error("停止录音失败：", e)
+        setRecording(false)
+        setStatus("停止录音失败")
+        Alert.alert("错误", "停止录音失败：" + (e?.message || ""))
+      }
+    }
 
-    if (ret === 1) {
-      setStatus("正在连接ASR服务器，请等待...")
-    } else {
-      setStatus("连接失败，请检查ASR地址和端口")
+    // 解析阿里云事件：按 header.name 分发；文本通常在 payload.result / payload.text
+    const handleJsonMessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data)
+        const name = msg?.header?.name
+        const text = msg?.payload?.result ?? msg?.payload?.text ?? msg?.payload?.result_text ?? ""
+
+        switch (name) {
+          case "TranscriptionStarted":
+            // 可以开始推音频（已在 startRecording 中完成）
+            break
+          case "TranscriptionResultChanged":
+            if (text) setResult((prev) => prev + text)
+            break
+          case "SentenceEnd":
+            if (text) setResult((prev) => prev + text + "\n")
+            break
+          case "TranscriptionCompleted":
+            setStatus("识别完成")
+            break
+          default:
+            // 其他事件忽略或调试
+            // console.log("WS event:", name, msg)
+            break
+        }
+      } catch (error) {
+        console.error("JSON parse error:", error)
+      }
+    }
+
+    const handleConnState = (connState) => {
       setIsLoading(false)
+      if (connState === 0) {
+        setStatus("连接成功!请点击开始")
+        setIsConnected(true)
+      } else if (connState === 1) {
+        setStatus("连接关闭")
+        setIsConnected(false)
+      } else if (connState === 2) {
+        setStatus("连接地址失败,请检查ASR地址和端口。")
+        setIsConnected(false)
+      }
     }
-  }
 
-  const startRecording = () => {
-    setResult("")
-    RecorderManager.start()
-    setRecording(true)
-    setStatus("录音中...")
-  }
-
-  const stopRecording = () => {
-    RecorderManager.stop()
-    setRecording(false)
-    setStatus("发送完数据,请等候,正在识别...")
-
-    setTimeout(() => {
-      WebSocketManager.close()
-      setStatus("请点击连接")
-      setIsConnected(false)
-    }, 3000)
-  }
-
-  const handleJsonMessage = (jsonMsg) => {
-    try {
-      const data = JSON.parse(jsonMsg.data)
-      setResult((prevResult) => prevResult + data.text)
-    } catch (error) {
-      console.error("Error parsing JSON message:", error)
-    }
-  }
-
-  const handleConnState = (connState) => {
-    setIsLoading(false)
-
-    if (connState === 0) {
-      setStatus("连接成功!请点击开始")
-      setIsConnected(true)
-    } else if (connState === 1) {
-      setStatus("连接关闭")
-      setIsConnected(false)
-    } else if (connState === 2) {
-      setStatus("连接地址失败,请检查ASR地址和端口。")
-      setIsConnected(false)
-    }
-  }
 
   return (
     <View style={styles.container}>
