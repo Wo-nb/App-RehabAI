@@ -16,22 +16,38 @@ class RecorderManager {
     }
   }
 
+  setOnDataCallback(callback) {
+    this.onDataCallback = callback
+  }
+
   async requestPermissions() {
       try {
-        // 只请求录音权限
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          {
-            title: "录音权限",
-            message: "应用需要录音权限以进行语音识别",
-            buttonNeutral: "稍后询问",
-            buttonNegative: "取消",
-            buttonPositive: "确定"
-          }
-        );
+        // iOS 或 Web 平台直接通过
+        if (Platform.OS !== "android") {
+          return true;
+        }
 
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          throw new Error("需要录音权限才能使用语音识别功能");
+        // 组装需要请求的权限：始终包含录音；API <= 28 追加存储（READ/WRITE）
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ];
+
+        const androidApiLevel = Platform.Version || 0;
+        if (androidApiLevel <= 28) {
+          if (PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE) {
+            permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+          }
+          if (PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE) {
+            permissions.push(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+          }
+        }
+
+        // 使用 requestMultiple 统一申请
+        const granted = await PermissionsAndroid.requestMultiple(permissions);
+
+        const allGranted = permissions.every((p) => granted[p] === PermissionsAndroid.RESULTS.GRANTED);
+        if (!allGranted) {
+          throw new Error("需要录音/存储权限才能使用语音识别功能");
         }
 
         return true;
@@ -70,16 +86,6 @@ class RecorderManager {
       this.sampleBuf = new Int16Array();
       await AudioRecord.start();
       
-      // 发送开始录音的请求
-      const request = {
-        chunk_size: [5, 10, 5],
-        wav_name: "react-native",
-        is_speaking: true,
-        chunk_interval: 10,
-        mode: "online",
-      };
-      WebSocketManager.wsSend(JSON.stringify(request));
-      
       console.log("Recording started");
     } catch (error) {
       this.isRecording = false;
@@ -96,20 +102,10 @@ class RecorderManager {
 
         // 发送剩余的音频数据
         if (this.sampleBuf.length > 0) {
-          WebSocketManager.wsSend(this.sampleBuf);
+          WebSocketManager.sendAudio(this.sampleBuf.buffer);
           this.sampleBuf = new Int16Array();
         }
 
-        // 发送结束录音的请求
-        const request = {
-          chunk_size: [5, 10, 5],
-          wav_name: "react-native",
-          is_speaking: false,
-          chunk_interval: 10,
-          mode: "online",
-        };
-
-        WebSocketManager.wsSend(JSON.stringify(request));
         console.log("Recording stopped");
       }
     } catch (error) {
@@ -144,13 +140,14 @@ class RecorderManager {
       newBuffer.set(view, this.sampleBuf.length);
       this.sampleBuf = newBuffer;
 
-      // Send chunks of audio data
+      // Send chunks of audio data using ASR protocol
       const chunkSize = 960;
 
       while (this.sampleBuf.length >= chunkSize) {
         const sendBuf = this.sampleBuf.slice(0, chunkSize);
         this.sampleBuf = this.sampleBuf.slice(chunkSize);
-        WebSocketManager.wsSend(sendBuf.buffer);
+        // 使用sendAudio方法发送二进制音频数据
+        WebSocketManager.sendAudio(sendBuf.buffer);
       }
     } catch (error) {
       console.error("处理音频数据失败:", error);

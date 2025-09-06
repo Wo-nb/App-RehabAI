@@ -1,10 +1,10 @@
 "use client"
 
 import { View, StyleSheet, TouchableOpacity } from "react-native"
-import { useState, useEffect, useImperativeHandle, forwardRef } from "react"
+import { useState, useEffect, useImperativeHandle, forwardRef, useRef } from "react"
 import Icon from "react-native-vector-icons/Ionicons"
 import RecorderManager from "../utils/RecorderManager"
-import WebSocketManager from "../utils/WebSocketManager"
+import RealtimeSpeechRecognition from "../ASR/RealtimeSpeechRecognition"
 
 const Microphone = forwardRef((props, ref) => {
   const [recording, setRecording] = useState(false)
@@ -12,6 +12,7 @@ const Microphone = forwardRef((props, ref) => {
   const [status, setStatus] = useState("点击连接")
   const [isConnected, setIsConnected] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const asrRef = useRef(null)
 
   // 当状态改变时通知父组件
   useEffect(() => {
@@ -40,12 +41,24 @@ const Microphone = forwardRef((props, ref) => {
     }
   }, [])
 
+  // 处理ASR服务的状态更新
+  const handleASRStatusChange = (newStatus, newIsLoading) => {
+    setStatus(newStatus)
+    setIsLoading(newIsLoading)
+  }
+
+  // 处理ASR服务的语音识别结果
+  const handleASRResult = (newResult) => {
+    setResult(newResult)
+    props.handleVoiceInput && props.handleVoiceInput(newResult)
+  }
+
   // 清理函数
   const cleanup = () => {
     if (recording) {
       RecorderManager.stop()
     }
-    WebSocketManager.close()
+    // WebSocketManager.close()
     setIsConnected(false)
     RecorderManager.cleanup()
   }
@@ -56,19 +69,7 @@ const Microphone = forwardRef((props, ref) => {
 
   const connect = () => {
     console.log("尝试连接ASR服务器...")
-    setIsLoading(true)
-    // 确保先关闭之前的连接
-    WebSocketManager.close()
-
-    const ret = WebSocketManager.connect("wss://www.funasr.com:10095/", handleJsonMessage, handleConnState)
-    console.log("连接返回值:", ret)
-
-    if (ret === 1) {
-      setStatus("正在连接ASR服务器，请等待...")
-    } else {
-      setStatus("连接失败，请检查ASR地址和端口")
-      setIsLoading(false)
-    }
+    asrRef.current?.connect()
   }
 
   // 处理micro点击事件
@@ -85,7 +86,6 @@ const Microphone = forwardRef((props, ref) => {
   const startRecording = () => {
     if (!isConnected) {
       setStatus("请先连接ASR服务器")
-      setIsLoading(false)
       connect()
       return
     }
@@ -94,61 +94,20 @@ const Microphone = forwardRef((props, ref) => {
     setResult("")
     props.handleVoiceInput && props.handleVoiceInput("")
 
-    RecorderManager.start()
+    asrRef.current?.startRecording()
     setRecording(true)
-    setStatus("录音中...")
   }
 
   const stopRecording = () => {
-    RecorderManager.stop()
+    asrRef.current?.stopRecording()
     setRecording(false)
-    setStatus("录音结束,发送完数据,请等候,正在识别...")
-
-    // 添加延迟关闭连接，确保所有数据都被处理
-    setTimeout(() => {
-      WebSocketManager.close()
-      setStatus("请点击连接")
-      setIsConnected(false)
-    }, 3000)
   }
 
-  const handleJsonMessage = (jsonMsg) => {
-    try {
-      console.log("收到原始消息:", jsonMsg)
-
-      const data = JSON.parse(jsonMsg.data)
-      console.log("解析后的数据:", data)
-
-      if (data && data.text) {
-        // 更新本地状态
-        setResult((prevResult) => {
-          const updatedResult = prevResult + data.text
-          console.log("更新后的识别结果:", updatedResult)
-          return updatedResult
-        })
-      } else {
-        console.warn("收到的数据中没有text字段:", data)
-      }
-    } catch (error) {
-      console.error("解析JSON消息时出错:", error, "原始消息:", jsonMsg)
-    }
-  }
-
-  const handleConnState = (connState) => {
-    console.log("WebSocket连接状态变化:", connState)
-    setIsLoading(false)
-
-    if (connState === 0) {
-      setStatus("连接成功!请点击开始")
-      setIsConnected(true)
-    } else if (connState === 1) {
-      setStatus("连接关闭")
-      setIsConnected(false)
-    } else if (connState === 2) {
-      setStatus("连接地址失败,请检查ASR地址和端口。")
-      setIsConnected(false)
-    }
-  }
+  // 监听ASR服务的状态变化 - 通过回调处理，不直接访问ref属性
+  // useEffect(() => {
+  //   // 移除直接访问asrRef.current属性的逻辑，因为RealtimeSpeechRecognition不暴露这些属性
+  //   // 状态更新通过handleASRStatusChange回调处理
+  // }, [])
 
   return (
     <View>
@@ -159,6 +118,22 @@ const Microphone = forwardRef((props, ref) => {
           color={recording ? "#ef4444" : "#3b82f6"}
         />
       </TouchableOpacity>
+      
+      {/* ASR服务组件 */}
+      <RealtimeSpeechRecognition
+        handleVoiceInput={handleASRResult}
+        onStatusChange={handleASRStatusChange}
+        onRef={(ref) => {
+          asrRef.current = ref
+          // 更新本地状态
+          if (ref) {
+            setIsConnected(ref.isConnected || false)
+            setRecording(ref.recording || false)
+            setStatus(ref.status || "点击连接")
+            setIsLoading(ref.isLoading || false)
+          }
+        }}
+      />
     </View>
   )
 })

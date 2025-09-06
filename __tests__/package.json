@@ -1,0 +1,39 @@
+{
+  "name": "asr-test-tools",
+  "version": "1.0.0",
+  "description": "独立ASR测试工具集，用于测试阿里云实时语音识别功能",
+  "main": "run-asr-test.js",
+  "scripts": {
+    "test": "node run-asr-test.js quick",
+    "test:full": "node run-asr-test.js full",
+    "test:protocol": "node run-asr-test.js protocol",
+    "test:config": "node run-asr-test.js config",
+    "test:validate": "node run-asr-test.js validate",
+    "test:help": "node run-asr-test.js help"
+  },
+  "keywords": [
+    "asr",
+    "speech-recognition",
+    "alibaba-cloud",
+    "nls",
+    "websocket",
+    "test",
+    "testing"
+  ],
+  "author": "RehabAI Team",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "bugs": {
+    "url": "."
+  },
+  "homepage": "."
+}

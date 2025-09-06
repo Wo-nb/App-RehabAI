@@ -25,7 +25,7 @@ import Icon from "react-native-vector-icons/Ionicons"
 import UserEval from "./DigitalHuman/UserEval"
 import Admin from "./DigitalHuman/Admin"
 import WebRTCManager from "./utils/WebRTCManager"
-import Microphone from "./DigitalHuman/Microphone"
+import RealtimeSpeechRecognition from "./ASR/RealtimeSpeechRecognition"
 const { width, height } = Dimensions.get("window")
 const ChooseVideoTypes = ["肩", "桡骨", "膝", "踝", "俯卧撑","康复操"]
 
