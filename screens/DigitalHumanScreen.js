@@ -1,22 +1,8 @@
 "use client"
 
 import React, { useRef, useState, useEffect } from "react"
-import {
-  StyleSheet,
-  View,
-  PermissionsAndroid,
-  Platform,
-  StatusBar,
-  Text,
-  TouchableOpacity,
-  SafeAreaView,
-  Dimensions,
-  ActivityIndicator,
-  Button,
-  Alert,
-  ScrollView,
-  Animated,
-} from "react-native"
+import {  StyleSheet,  View,  PermissionsAndroid,  Platform,  StatusBar,  Text,  TouchableOpacity,
+  SafeAreaView,  Dimensions,  ActivityIndicator,  Button,  Alert,  ScrollView,  Animated,  Switch,} from "react-native"
 import { useFocusEffect } from "@react-navigation/native"
 import ChatView from "./DigitalHuman/ChatView"
 import { DigitView } from "./DigitalHuman/DigitView"
@@ -25,7 +11,6 @@ import Icon from "react-native-vector-icons/Ionicons"
 import UserEval from "./DigitalHuman/UserEval"
 import Admin from "./DigitalHuman/Admin"
 import WebRTCManager from "./utils/WebRTCManager"
-import Microphone from "./DigitalHuman/Microphone"
 const { width, height } = Dimensions.get("window")
 const ChooseVideoTypes = ["肩", "桡骨", "膝", "踝", "俯卧撑","康复操"]
 
@@ -44,7 +29,8 @@ const DigitalHumanScreen = ({ navigation }) => {
   const [messages, setMessages] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [showMotionButton, setShowMotionButton] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(true)
+  // const [isExpanded, setIsExpanded] = useState(false)
   const [showTypesButtons, setShowTypesButtons] = useState(false)
   const [selectedBodyPart, setSelectedBodyPart] = useState(null)
   const [shouldClearMessages, setShouldClearMessages] = useState(true)
@@ -169,6 +155,15 @@ const DigitalHumanScreen = ({ navigation }) => {
     setMessages([])
     if (chatRef.current) {
       chatRef.current.clearMessages()
+    }
+  }
+  
+// 新增连接开关逻辑封装
+  const toggleConnection = async (value) => {
+    if (value) {
+      await handleConnection()
+    } else {
+      handleDisconnect()
     }
   }
 
@@ -395,6 +390,20 @@ const DigitalHumanScreen = ({ navigation }) => {
       {/* 聊天视图 - 始终显示 */}
       <View style={[styles.chatContainer]}>
         <View style={styles.chatViewContainer}>
+
+          {/* 连接开关栏 */}
+          <View style={styles.connectionToggleBar}>
+            <Text style={styles.connectionToggleText}>
+              {isConnected ? "已连接数字人" : "未连接"}
+            </Text>
+            <Switch
+              value={isConnected}
+              onValueChange={toggleConnection}
+              trackColor={{ false: "#cbd5e1", true: "#60a5fa" }}
+              thumbColor={isConnected ? "#1d4ed8" : "#f8fafc"}
+            />
+          </View>
+
           {/* 展开/收起按钮 */}
           <TouchableOpacity style={styles.expandButton} onPress={() => setIsExpanded(!isExpanded)}>
             <Icon name={isExpanded ? "chevron-down" : "chevron-up"} size={20} color="#3b82f6" />
@@ -486,51 +495,26 @@ const DigitalHumanScreen = ({ navigation }) => {
             </ScrollView>
           </Animated.View>
 
-          {/* 输入区域或连接按钮 - 固定在底部 */}
+          {/* 输入区域 - 固定在底部 */}
           <View style={styles.inputWrapper}>
-            {isConnected ? (
-              <>
-                {/* 加载状态指示器 - 独立显示在 ChatView 上方
-                {chatRef.current?.isLoading && (
-                  <View style={styles.loadingIndicator}>
-                    <ActivityIndicator size="small" color="#3b82f6" />
-                    <Text style={styles.loadingIndicatorText}>AI思考中...</Text>
-                  </View>
-                )} */}
-              <ChatView 
-                sessionId={sessionId} 
-                isConnected={isConnected} 
-                audioStream={remoteAudioStream} 
-                showMotionButton={showMotionButton}
-                navigation={navigation}
-                messages={messages}
-                setMessages={setMessages}
-                ref={chatRef}
-                showOnlyInput={true}
-              />
-              </>
-            ) : (
-              <View style={styles.connectButtonWrapper}>
-                {!isLoading ? (
-                  <TouchableOpacity style={styles.connectButton} onPress={handleConnection}>
-                    <LinearGradient
-                      colors={["#4cc9f0", "#4361ee"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.connectButtonGradient}
-                    >
-                      <Icon name="link" size={20} color="#fff" style={styles.buttonIcon} />
-                      <Text style={styles.connectButtonText}>{sessionId ? "重新连接" : "连接数字人"}</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#3b82f6" />
-                    <Text style={styles.loadingText}>正在连接...</Text>
-                  </View>
-                )}
+            {/* 可选：AI思考中提示 */}
+            {chatRef.current?.isLoading && (
+              <View style={styles.loadingIndicator}>
+                <ActivityIndicator size="small" color="#3b82f6" />
+                <Text style={styles.loadingIndicatorText}>AI思考中...</Text>
               </View>
             )}
+            <ChatView 
+              sessionId={sessionId} 
+              isConnected={isConnected} 
+              audioStream={remoteAudioStream} 
+              showMotionButton={showMotionButton}
+              navigation={navigation}
+              messages={messages}
+              setMessages={setMessages}
+              ref={chatRef}
+              showOnlyInput={true}
+            />
           </View>
         </View>
       </View>
@@ -886,6 +870,24 @@ const styles = StyleSheet.create({
   },
   typeButtonTextSelected: {
     fontWeight: "bold",
+  },
+  // 新增
+  connectionToggleBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: height * 0.008,
+    paddingHorizontal: width * 0.04,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderTopLeftRadius: normalize(20),
+    borderTopRightRadius: normalize(20),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(203, 213, 224, 0.5)",
+  },
+  connectionToggleText: {
+    color: "#334155",
+    fontSize: normalize(14),
+    fontWeight: "500",
   },
 })
 

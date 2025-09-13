@@ -1,132 +1,142 @@
-// utils/WebSocketManager.js
-// 封装阿里云 ISI 实时识别 WebSocket 协议
+// WebSocketManager.js
+import AccessToken from "./AliyunTokenManager";
 
-let ws = null
-let onTextMessage = null       // (evt) => void
-let onConnState = null         // (0:open, 1:close, 2:error)
-let currentTaskId = null
-let isOpen = false
-
-// 生成 32 字节 hex
-function genHex32() {
-  const bytes = new Uint8Array(16)
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes)
-  } else {
-    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256)
+class WebSocketManager {
+  constructor() {
+    this.ws = null;
+    this.jsonMessageHandler = null;
+    this.connStateHandler = null;
   }
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
 
-function safeSendText(obj) {
-  if (!ws || ws.readyState !== 1) return
-  ws.send(JSON.stringify(obj))
-}
+  async connect(jsonMessageHandler, connStateHandler) {
+    if (this.ws) {
+      console.log('not exist ws');
+      this.close();
+    }
 
-const WebSocketManager = {
-  connect(url, handleJsonMessage, handleConnState) {
     try {
-      // url 必须已包含 ?token=xxx
-      onTextMessage = handleJsonMessage
-      onConnState = handleConnState
-      currentTaskId = genHex32()
+      const appkey = 'gL0aXXsAifcMbt9r';
+      const token = await getAliyunToken();
+      const socketUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${token}`;
 
-      ws = new WebSocket(url)
-      ws.binaryType = 'arraybuffer'
+      this.ws = new WebSocket(socketUrl);
+      this.jsonMessageHandler = jsonMessageHandler;
+      this.connStateHandler = connStateHandler;
 
-      ws.onopen = () => {
-        isOpen = true
-        onConnState && onConnState(0)
-      }
+      this.ws.onopen = () => {
+        console.log('WebSocket connection opened');
 
-      ws.onmessage = (evt) => {
-        // 按协议：事件是 Text 帧；音频是 Binary 帧（这里客户端不消费）
-        if (typeof evt.data === 'string') {
-          onTextMessage && onTextMessage(evt)
+        var startTranscriptionMessage = {
+          header: {
+            appkey: appkey,
+            namespace: 'SpeechTranscriber',
+            name: 'StartTranscription',
+            task_id: this.generateUUID(),
+            message_id: this.generateUUID(),
+          },
+          payload: {
+            format: 'pcm',
+            sample_rate: 16000,
+            enable_intermediate_result: true,
+            enable_punctuation_prediction: true,
+            enable_inverse_text_normalization: true,
+          },
+        };
+
+        this.ws.send(JSON.stringify(startTranscriptionMessage));
+
+        if (this.connStateHandler) {
+          this.connStateHandler(0); // 0 means connected
         }
-      }
+      };
 
-      ws.onerror = () => {
-        onConnState && onConnState(2)
-      }
+      this.ws.onmessage = event => {
+        console.log(event.data);
+        if (this.jsonMessageHandler && event && event.data) {
+          this.jsonMessageHandler({
+            type: 'message',
+            data: event.data,
+          });
+        }
+      };
 
-      ws.onclose = () => {
-        isOpen = false
-        onConnState && onConnState(1)
-      }
+      this.ws.onclose = event => {
+        console.log('WebSocket connection closed');
+        console.log('Close code:', event.code);
+        console.log('Close reason:', event.reason);
+        console.log('Was clean:', event.wasClean);
+        if (this.connStateHandler) {
+          this.connStateHandler(1); // 1 means closed
+        }
+        this.ws = null;
+      };
 
-      return 1
-    } catch (e) {
-      console.error('WS connect error:', e)
-      onConnState && onConnState(2)
-      return -1
+      this.ws.onerror = error => {
+        console.error('WebSocket error:', error);
+        if (this.connStateHandler) {
+          this.connStateHandler(2); // 2 means error
+        }
+        this.close();
+      };
+
+      return 1; // Success
+    } catch (error) {
+      console.error('Error connecting to WebSocket:', error);
+      this.close();
+      return 0; // Error
     }
-  },
+  }
 
-  // 发送 Start 指令
-  sendStart(appkey, {
-    format = 'pcm',       // 'pcm' | 'opus' | 'wav' | ...
-    sample_rate = 16000,
-    enable_intermediate_result = true,
-    enable_punctuation_prediction = true,
-    enable_inverse_text_normalization = true,
-    extraPayload = {}
-  } = {}) {
-    if (!isOpen) return
-    const msg = {
-      header: {
-        message_id: genHex32(),
-        task_id: currentTaskId,
-        namespace: 'SpeechTranscriber',
-        name: 'StartTranscription',
-        appkey
-      },
-      payload: {
-        format,
-        sample_rate,
-        enable_intermediate_result,
-        enable_punctuation_prediction,
-        enable_inverse_text_normalization,
-        ...extraPayload
-      }
+  wsSend(data) {
+    // if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    //   console.error('WebSocket is not connected');
+    //   return;
+    // }
+    if(!this.ws){console.log("ws closed")}
+    try {
+      this.ws.send(data);
+    } catch (error) {
+      this.close();
+      console.error('Error sending data:', error);
     }
-    safeSendText(msg)
-  },
-
-  // 持续发送二进制音频
-  sendAudio(binaryChunk) {
-    if (!isOpen || !ws) return
-    // 直接发 Binary Frame
-    ws.send(binaryChunk)
-  },
-
-  // 发送 Stop 指令
-  sendStop(appkey) {
-    if (!isOpen) return
-    const msg = {
-      header: {
-        message_id: genHex32(),
-        task_id: currentTaskId,
-        namespace: 'SpeechTranscriber',
-        name: 'StopTranscription',
-        appkey
-      }
-    }
-    safeSendText(msg)
-  },
+  }
 
   close() {
-    try {
-      if (ws) {
-        ws.close()
-        ws = null
-      }
-    } catch (e) {
-      console.warn('WS close warn:', e)
+    if (this.ws) {
+      console.log('Closing the ws connect');
+      this.ws.close();
+      this.ws = null;
     }
+  }
+
+  generateUUID() {
+    // 生成32位hex字符的唯一ID
+    return 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.replace(/[x]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      return r.toString(16);
+    });
   }
 }
 
-export default WebSocketManager
+// 在需要获取token的地方
+const getAliyunToken = async () => {
+  const accessKeyId = 'LTAI5tK2tg6eYxbBPRU3F45e';      // 替换为你的AccessKey ID
+  const accessKeySecret = 'lNMyv1GQNsZOZCid7ZBTcgujq4leST';  // 替换为你的AccessKey Secret
+  
+  try {
+    const [token, expireTime] = await AccessToken.createToken(accessKeyId, accessKeySecret);
+    console.log('token: ' + token + ', expire time(s): ' + expireTime);
+    
+    
+    if (expireTime) {
+      const expireDate = new Date(expireTime * 1000);
+      console.log('token有效期的北京时间：' + expireDate.toLocaleString('zh-CN'));
+    }
+    
+    return token;
+  } catch (error) {
+    console.error('获取token失败:', error);
+  }
+};
+
+export default new WebSocketManager();

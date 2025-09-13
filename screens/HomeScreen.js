@@ -1,16 +1,6 @@
 import React, { useEffect } from "react"
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ImageBackground,
-  StatusBar,
-  Animated,
-  Dimensions,
-  Platform,
-  SafeAreaView
-} from "react-native"
+import {   StyleSheet,   View,   Text,   TouchableOpacity,   ImageBackground,  StatusBar,
+  Animated,  Dimensions,  Platform,  SafeAreaView} from "react-native"
 import LinearGradient from "react-native-linear-gradient"
 
 const { width, height } = Dimensions.get('window')

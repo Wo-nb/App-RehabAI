@@ -55,20 +55,51 @@ class WebRTCManager {
 
   // 请求必要的权限
   async requestPermissions() {
-    if (Platform.OS === "android") {
-      try {
-        const granted = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        ])
-        return Object.values(granted).every((permission) => permission === PermissionsAndroid.RESULTS.GRANTED)
-      } catch (err) {
-        console.warn("权限请求失败:", err)
+    if (Platform.OS !== "android") {
+      return true
+    }
+
+    try {
+      // 基本权限：相机 + 录音
+      const permissions = [
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ]
+
+      // 可选权限：Android 12+ 蓝牙连接（若依赖外设耳机通话）
+      const androidApiLevel = Platform.Version || 0
+      if (androidApiLevel >= 31 && PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT) {
+        permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT)
+      }
+
+      const result = await PermissionsAndroid.requestMultiple(permissions)
+      const allGranted = permissions.every((p) => result[p] === PermissionsAndroid.RESULTS.GRANTED)
+      if (!allGranted) {
+        console.warn("必要权限未授予: ", result)
         return false
       }
+      return true
+    } catch (err) {
+      console.warn("权限请求失败:", err)
+      return false
     }
-    return true
   }
+
+  // ASR 开始时静音本地麦克风、结束后恢复。这样远端仍可播放数字人的声音，只是本地不上行
+  muteLocalMic() {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((t) => { t.enabled = false })
+      console.log("[RTC] local mic muted")
+    }
+  }
+
+  unmuteLocalMic() {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((t) => { t.enabled = true })
+      console.log("[RTC] local mic unmuted")
+    }
+  }
+
 
   // 获取本地媒体流
   async getLocalStream() {
@@ -120,7 +151,7 @@ class WebRTCManager {
       
       if (pc.connectionState === "connected") {
         this.isConnected = true
-        this._enhanceAudioOutput()
+       // this._enhanceAudioOutput()
       } else if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
         this.isConnected = false
       }

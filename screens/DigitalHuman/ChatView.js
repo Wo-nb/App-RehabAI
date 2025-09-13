@@ -271,6 +271,14 @@ const ChatView = forwardRef(({
 
   return (
     <View style={[styles.container, type === "secondary" && styles.secondaryContainer]}>
+      {/* 状态覆盖层 - 显示录音状态 */}
+      {showMicStatus && (
+        <Animated.View style={[styles.statusOverlay, { opacity: statusOpacity }]}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={styles.statusText}>{micStatus}</Text>
+        </Animated.View>
+      )}
+      
       {/* 只有当 showOnlyInput 为 false 时才显示以下内容 */}
       {!showOnlyInput && (
         <>
