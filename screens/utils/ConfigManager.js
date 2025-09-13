@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 class ConfigManager {
   constructor() {
     this.config = {
-      API_BASE_URL: "http://192.168.177.27:8000",
-      DIGITAL_HUMAN_URL: "http://192.168.177.27:8010"
+      API_BASE_URL: "http://10.3.242.26:8079",
+      DIGITAL_HUMAN_URL: "http://10.3.242.26:8010"
     };
     this.listeners = new Set();
     this.initialized = false;

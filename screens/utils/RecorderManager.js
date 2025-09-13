@@ -86,6 +86,16 @@ class RecorderManager {
       this.sampleBuf = new Int16Array();
       await AudioRecord.start();
       
+      // // 发送开始录音的请求
+      // const request = {
+      //   chunk_size: [5, 10, 5],
+      //   wav_name: "react-native",
+      //   is_speaking: true,
+      //   chunk_interval: 10,
+      //   mode: "online",
+      // };
+      // WebSocketManager.wsSend(JSON.stringify(request));
+      
       console.log("Recording started");
     } catch (error) {
       this.isRecording = false;
