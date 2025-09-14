@@ -167,22 +167,6 @@ const Microphone = forwardRef((props, ref) => {
           color={recording ? '#ef4444' : '#3b82f6'}
         />
       </TouchableOpacity>
-      
-      {/* ASR服务组件 */}
-      <RealtimeSpeechRecognition
-        handleVoiceInput={handleASRResult}
-        onStatusChange={handleASRStatusChange}
-        onRef={(ref) => {
-          asrRef.current = ref
-          // 更新本地状态
-          if (ref) {
-            setIsConnected(ref.isConnected || false)
-            setRecording(ref.recording || false)
-            setStatus(ref.status || "点击连接")
-            setIsLoading(ref.isLoading || false)
-          }
-        }}
-      />
     </View>
   );
 });
