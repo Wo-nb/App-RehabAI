@@ -101,7 +101,7 @@ class RecorderManager {
         }
 
         // 发送结束录音的请求
-        const request = {
+    /*    const request = {
           chunk_size: [5, 10, 5],
           wav_name: "react-native",
           is_speaking: false,
@@ -110,7 +110,7 @@ class RecorderManager {
         };
 
         WebSocketManager.wsSend(JSON.stringify(request));
-        console.log("Recording stopped");
+        console.log("Recording stopped"); */
       }
     } catch (error) {
       console.error("停止录音失败:", error);

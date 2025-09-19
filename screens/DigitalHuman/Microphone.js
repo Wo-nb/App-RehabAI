@@ -4,7 +4,7 @@ import {View, StyleSheet, TouchableOpacity} from 'react-native';
 import {useState, useEffect, useImperativeHandle, forwardRef} from 'react';
 import Icon from 'react-native-vector-icons/Ionicons';
 import RecorderManager from '../utils/RecorderManager';
-import WebSocketManager from '../utils/WebSocketManager';
+import WebSocketManager from '../utils/WebSocketManager'; // 内部改为本地vosk方案
 
 const Microphone = forwardRef((props, ref) => {
   const [recording, setRecording] = useState(false);
@@ -55,12 +55,27 @@ const Microphone = forwardRef((props, ref) => {
   }));
 
   const connect = () => {
-    console.log('尝试连接ASR服务器...');
+    console.log('尝试加载本地模型...');
     setIsLoading(true);
     // 确保先关闭之前的连接
     WebSocketManager.close();
 
-    const ret = WebSocketManager.connect(handleJsonMessage, handleConnState);
+    // 传入模型路径
+    // Android 放 assets: model-vosk-cn
+    const modelPath = 'model-vosk-cn';
+    const ret = WebSocketManager.connect(
+      handleEngineMessage,
+      handleConnState,
+      { modelPath, sampleRate: 16000 }
+    );
+    if (ret === 1) {
+      setStatus('正在加载本地模型...');
+    } else {
+      setStatus('初始化失败，请检查模型路径');
+      setIsLoading(false);
+    }
+
+    /*  const ret = WebSocketManager.connect(handleJsonMessage, handleConnState);
 
     console.log('连接返回值:', ret);
 
@@ -69,7 +84,7 @@ const Microphone = forwardRef((props, ref) => {
     } else {
       setStatus('连接失败，请检查ASR地址和端口');
       setIsLoading(false);
-    }
+    } */
   };
 
   // 处理micro点击事件
@@ -85,7 +100,7 @@ const Microphone = forwardRef((props, ref) => {
 
   const startRecording = () => {
     if (!isConnected) {
-      setStatus('请先连接ASR服务器');
+      setStatus('请先连接本地识别器');
       console.log('未连接');
       setIsLoading(false);
       connect();
@@ -101,11 +116,12 @@ const Microphone = forwardRef((props, ref) => {
     setStatus('录音中...');
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     RecorderManager.stop();
     setRecording(false);
     console.log("结束")
-    setStatus('录音结束,发送完数据,请等候,正在识别...');
+    setStatus('录音结束,正在识别...');
+    await WebSocketManager.flushFinal();
 
     // // 添加延迟关闭连接，确保所有数据都被处理
     // setTimeout(() => {
@@ -115,7 +131,7 @@ const Microphone = forwardRef((props, ref) => {
     // }, 3000)
   };
 
-  const handleJsonMessage = jsonMsg => {
+/*  const handleJsonMessage = jsonMsg => {
     try {
       console.log('收到原始消息:', jsonMsg);
 
@@ -135,6 +151,26 @@ const Microphone = forwardRef((props, ref) => {
       }
     } catch (error) {
       console.error('解析JSON消息时出错:', error, '原始消息:', jsonMsg);
+    }
+  }; */
+
+  // 统一处理Vosk封装后的消息
+  const handleEngineMessage = msg => {
+    try {
+      // 兼容旧签名：这里是直接对象
+      const data = msg;
+      if (!data) return;
+
+      if (data.type === 'partial' && data.text) {
+        // 增量：拼接显示（你也可以选择只展示最新partial）
+        setResult(prev => prev + data.text);
+      } else if (data.type === 'final' && data.text) {
+        // 最终：收口
+        setResult(prev => prev + data.text);
+        setStatus('识别完成');
+      }
+    } catch (e) {
+      console.error('处理识别消息出错:', e);
     }
   };
 
