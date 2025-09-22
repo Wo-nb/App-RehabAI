@@ -125,3 +125,12 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+android {
+  // 让打包时把我们生成的 assets 一起打进去
+  sourceSets {
+    main {
+      assets.srcDirs += ["$buildDir/assets"]
+    }
+  }
+}

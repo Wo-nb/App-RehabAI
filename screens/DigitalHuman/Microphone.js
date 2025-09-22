@@ -112,6 +112,7 @@ const Microphone = forwardRef((props, ref) => {
     props.handleVoiceInput && props.handleVoiceInput('');
 
     RecorderManager.start();
+    WebSocketManager.start();
     setRecording(true);
     setStatus('录音中...');
   };
@@ -123,12 +124,12 @@ const Microphone = forwardRef((props, ref) => {
     setStatus('录音结束,正在识别...');
     await WebSocketManager.flushFinal();
 
-    // // 添加延迟关闭连接，确保所有数据都被处理
-    // setTimeout(() => {
-    //   WebSocketManager.close()
-    //   setStatus("请点击连接")
-    //   setIsConnected(false)
-    // }, 3000)
+     // 添加延迟关闭连接，确保所有数据都被处理
+    setTimeout(() => {
+    WebSocketManager.close()
+    setStatus("请点击连接")
+    setIsConnected(false)
+    }, 60000)
   };
 
 /*  const handleJsonMessage = jsonMsg => {
@@ -162,8 +163,7 @@ const Microphone = forwardRef((props, ref) => {
       if (!data) return;
 
       if (data.type === 'partial' && data.text) {
-        // 增量：拼接显示（你也可以选择只展示最新partial）
-        setResult(prev => prev + data.text);
+        setResult(data.text);
       } else if (data.type === 'final' && data.text) {
         // 最终：收口
         setResult(prev => prev + data.text);
