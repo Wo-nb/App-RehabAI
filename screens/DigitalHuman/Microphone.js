@@ -5,10 +5,12 @@ import {useState, useEffect, useImperativeHandle, forwardRef} from 'react';
 import Icon from 'react-native-vector-icons/Ionicons';
 import RecorderManager from '../utils/RecorderManager';
 import WebSocketManager from '../utils/WebSocketManager'; // 内部改为本地vosk方案
+import filterAsrResult from './asrFilter';  // 引入过滤函数
 
 const Microphone = forwardRef((props, ref) => {
   const [recording, setRecording] = useState(false);
-  const [result, setResult] = useState('');
+  const [finalResult, setFinalResult] = useState('');
+  const [partialResult, setPartialResult] = useState('');
   const [status, setStatus] = useState('点击连接');
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -20,12 +22,15 @@ const Microphone = forwardRef((props, ref) => {
 
   // 监控识别结果变化
   useEffect(() => {
-    console.log('当前识别结果状态:', result);
+    const combined = finalResult + partialResult;
+    console.log('当前识别结果状态:', combined);
+    // 应用过滤
+    const filteredResult = filterAsrResult(combined);
     // 将结果传递给父组件
-    if (result) {
-      props.handleVoiceInput && props.handleVoiceInput(result);
+    if (filteredResult) {
+      props.handleVoiceInput && props.handleVoiceInput(filteredResult);
     }
-  }, [result]);
+  }, [finalResult, partialResult]);
 
   useEffect(() => {
     const initRecorder = async () => {
@@ -108,7 +113,8 @@ const Microphone = forwardRef((props, ref) => {
     }
 
     // 清空之前的结果
-    setResult('');
+    setFinalResult('');
+    setPartialResult('');
     props.handleVoiceInput && props.handleVoiceInput('');
 
     RecorderManager.start();
@@ -129,7 +135,7 @@ const Microphone = forwardRef((props, ref) => {
     WebSocketManager.close()
     setStatus("请点击连接")
     setIsConnected(false)
-    }, 60000)
+    }, 300000)
   };
 
 /*  const handleJsonMessage = jsonMsg => {
@@ -163,10 +169,11 @@ const Microphone = forwardRef((props, ref) => {
       if (!data) return;
 
       if (data.type === 'partial' && data.text) {
-        setResult(data.text);
+        setPartialResult(data.text);
       } else if (data.type === 'final' && data.text) {
         // 最终：收口
-        setResult(prev => prev + data.text);
+        setFinalResult(prev => prev + data.text);
+        setPartialResult('');
         setStatus('识别完成');
       }
     } catch (e) {
