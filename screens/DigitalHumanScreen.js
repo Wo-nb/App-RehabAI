@@ -1,8 +1,24 @@
 "use client"
 
 import React, { useRef, useState, useEffect } from "react"
-import {  StyleSheet,  View,  PermissionsAndroid,  Platform,  StatusBar,  Text,  TouchableOpacity,
-  SafeAreaView,  Dimensions,  ActivityIndicator,  Button,  Alert,  ScrollView,  Animated,  Switch,} from "react-native"
+import {
+  StyleSheet,
+  View,
+  PermissionsAndroid,
+  Platform,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
+  Dimensions,
+  ActivityIndicator,
+  Button,
+  Alert,
+  ScrollView,
+  Animated,
+  Switch,
+  AppState,
+} from "react-native"
 import { useFocusEffect } from "@react-navigation/native"
 import ChatView from "./DigitalHuman/ChatView"
 import { DigitView } from "./DigitalHuman/DigitView"
@@ -39,6 +55,26 @@ const DigitalHumanScreen = ({ navigation }) => {
   const audioRef = useRef(null)
   const chatRef = useRef(null)
   const scrollViewRef = useRef(null)
+  const appState = useRef(AppState.currentState)
+
+  // 处理应用状态变化
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+        console.log("App has come to the foreground!")
+      }
+
+      appState.current = nextAppState
+      if (appState.current === "background") {
+        console.log("App is in background, disconnecting...")
+        handleDisconnect()
+      }
+    })
+
+    return () => {
+      subscription.remove()
+    }
+  }, [])
 
   // 初始化 WebRTC 管理器
   useEffect(() => {

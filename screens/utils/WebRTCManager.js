@@ -408,21 +408,30 @@ class WebRTCManager {
   // 等待 ICE 收集完成
   _waitForIceGatheringComplete() {
     return new Promise((resolve) => {
-      if (this.peerConnection.iceGatheringState === "complete") {
-        console.log("ICE收集已完成")
-        resolve()
-      } else {
-        console.log("等待ICE收集...")
-        const checkState = () => {
-          if (this.peerConnection.iceGatheringState === "complete") {
-            console.log("ICE收集完成")
-            this.peerConnection.removeEventListener("icegatheringstatechange", checkState)
-            resolve()
-          }
+      const timeout = setTimeout(() => {
+        console.warn("ICE gathering timed out after 5 seconds.");
+        this.peerConnection.removeEventListener("icegatheringstatechange", checkState);
+        resolve();
+      }, 5000);
+
+      const checkState = () => {
+        if (this.peerConnection.iceGatheringState === "complete") {
+          clearTimeout(timeout);
+          console.log("ICE收集完成");
+          this.peerConnection.removeEventListener("icegatheringstatechange", checkState);
+          resolve();
         }
-        this.peerConnection.addEventListener("icegatheringstatechange", checkState)
+      };
+
+      if (this.peerConnection.iceGatheringState === "complete") {
+        clearTimeout(timeout);
+        console.log("ICE收集已完成");
+        resolve();
+      } else {
+        console.log("等待ICE收集...");
+        this.peerConnection.addEventListener("icegatheringstatechange", checkState);
       }
-    })
+    });
   }
 
   // 建立连接
