@@ -115,7 +115,6 @@ const Microphone = forwardRef((props, ref) => {
     // 清空之前的结果
     setFinalResult('');
     setPartialResult('');
-    props.handleVoiceInput && props.handleVoiceInput('');
 
     RecorderManager.start();
     WebSocketManager.start();
@@ -135,7 +134,7 @@ const Microphone = forwardRef((props, ref) => {
     WebSocketManager.close()
     setStatus("请点击连接")
     setIsConnected(false)
-    }, 300000)
+    }, 600000)
   };
 
 /*  const handleJsonMessage = jsonMsg => {

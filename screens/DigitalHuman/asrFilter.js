@@ -12,7 +12,7 @@ const FILLER_WORDS = [
  * @returns {string} 处理后的文本
  */
 const removeExtraSpaces = (text) => {
-  return text.replace(/\s+/g, ' ').trim();
+  return text.replace(/\s+/g, '').trim();
 };
 
 /**

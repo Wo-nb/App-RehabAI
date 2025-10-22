@@ -29,6 +29,8 @@ import Admin from "./DigitalHuman/Admin"
 import WebRTCManager from "./utils/WebRTCManager"
 const { width, height } = Dimensions.get("window")
 const ChooseVideoTypes = ["肩", "桡骨", "膝", "踝", "俯卧撑","康复操"]
+const [showMedicalRecord, setShowMedicalRecord] = useState(false);
+const [medicalRecordContent, setMedicalRecordContent] = useState(''); // 存储后端返回的病历内容
 
 // 添加响应式设计辅助函数
 const normalize = (size) => {
@@ -373,6 +375,46 @@ const DigitalHumanScreen = ({ navigation }) => {
     setMessages([...messages, {id: Date.now(), text: text, isUser: true}])
   }
 
+  // 电子病历相关逻辑
+    // 发送状态到后端的函数
+  const sendStateToBackend = async (state) => {
+    try {
+      const baseUrl = ConfigManager.getApiBaseUrl();
+      await fetch(`${baseUrl}/api/medical-record/state/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ state })
+      });
+    } catch (error) {
+      console.error("发送状态失败:", error);
+    }
+  };
+
+  // 处理终止并生成病历
+  const handleTerminate = async () => {
+    await sendStateToBackend(1);
+    // 这里应该从后端获取电子病历内容
+    // 模拟获取病历内容
+    setMedicalRecordContent("这里是后端返回的电子病历内容...");
+    setShowMedicalRecord(true);
+  };
+
+  // 处理确认打印
+  const handleConfirmPrint = async () => {
+    await sendStateToBackend(3);
+    setShowMedicalRecord(false);
+    // 这里可以添加打印逻辑
+  };
+
+  // 处理修改病历
+  const handleModify = async () => {
+    await sendStateToBackend(2);
+    setShowMedicalRecord(false);
+    // 这里可以添加修改工作流逻辑
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
@@ -540,6 +582,15 @@ const DigitalHumanScreen = ({ navigation }) => {
                 <Text style={styles.loadingIndicatorText}>AI思考中...</Text>
               </View>
             )}
+            <View style={styles.terminateButtonContainer}>
+              <TouchableOpacity
+                style={styles.terminateButton}
+                onPress={handleTerminate}
+                disabled={!isConnected} // 未连接时禁用
+              >
+                <Text style={styles.terminateButtonText}>终止（生成病历）</Text>
+              </TouchableOpacity>
+            </View>
             <ChatView 
               sessionId={sessionId} 
               isConnected={isConnected} 
@@ -554,6 +605,36 @@ const DigitalHumanScreen = ({ navigation }) => {
           </View>
         </View>
       </View>
+      {/* 电子病历弹窗 */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showMedicalRecord}
+        onRequestClose={() => setShowMedicalRecord(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>电子病历</Text>
+            <ScrollView style={styles.recordContent}>
+              <Text>{medicalRecordContent}</Text>
+            </ScrollView>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modifyButton}
+                onPress={handleModify}
+              >
+                <Text style={styles.buttonText}>修改</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={handleConfirmPrint}
+              >
+                <Text style={styles.buttonText}>确认（打印）</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -924,6 +1005,73 @@ const styles = StyleSheet.create({
     color: "#334155",
     fontSize: normalize(14),
     fontWeight: "500",
+  },
+  //电子病历相关样式
+  terminateButtonContainer: {
+    margin: 10,
+  },
+  terminateButton: {
+    backgroundColor: '#ef4444',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  terminateButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  recordContent: {
+    flex: 1,
+    marginBottom: 20,
+    padding: 10,
+    borderColor: '#e0e0e0',
+    borderWidth: 1,
+    borderRadius: 5,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+  },
+  modifyButton: {
+    backgroundColor: '#3b82f6',
+    padding: 12,
+    borderRadius: 8,
+    width: '40%',
+    alignItems: 'center',
+  },
+  confirmButton: {
+    backgroundColor: '#10b981',
+    padding: 12,
+    borderRadius: 8,
+    width: '40%',
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 })
 

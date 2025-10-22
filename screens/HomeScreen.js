@@ -3,6 +3,8 @@ import {   StyleSheet,   View,   Text,   TouchableOpacity,   ImageBackground,  S
   Animated,  Dimensions,  Platform,  SafeAreaView} from "react-native"
 import LinearGradient from "react-native-linear-gradient"
 
+
+
 const { width, height } = Dimensions.get('window')
 
 const HomeScreen = ({ navigation }) => {
@@ -198,7 +200,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "space-between",
     padding: 24,
-    paddingTop: height*0.1,
+    paddingTop: height*0.25,// 0.10 -> 0.25 -> 0.30
     paddingBottom: height*0.05,
   },
   logoContainer: {
@@ -217,7 +219,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: width*0.01,
     overflow: 'hidden',
-    height: height*0.18,
+    height: height*0.25,// 0.18 -> 0.22 -> 0.25 -> 0.30 -> 0.35 -> 0.40
     elevation: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
   },
   buttonIconContainer: {
     width: width*0.14,
-    height: height*0.06,
+    height: height*0.1,//0.06 -> 0.08 -> 0.1
     borderRadius: 25,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
     justifyContent: 'center',
