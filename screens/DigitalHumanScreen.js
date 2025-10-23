@@ -378,28 +378,33 @@ const DigitalHumanScreen = ({ navigation }) => {
   // 电子病历相关逻辑
     // 发送状态到后端的函数
   const sendStateToBackend = async (state) => {
-    try {
-      const baseUrl = ConfigManager.getApiBaseUrl();
-      await fetch(`${baseUrl}/api/medical-record/state/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ state })
-      });
-    } catch (error) {
-      console.error("发送状态失败:", error);
-    }
-  };
+  try {
+    const baseUrl = ConfigManager.getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/medical-record/state/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ state }),
+    });
+    const data = await response.json();   // 获取后端返回的 JSON
+    return data;                          // 返回给调用者
+  } catch (error) {
+    console.error("发送状态失败:", error);
+    return null;
+  }
+};
 
   // 处理终止并生成病历
-  const handleTerminate = async () => {
-    await sendStateToBackend(1);
-    // 这里应该从后端获取电子病历内容
-    // 模拟获取病历内容
-    setMedicalRecordContent("这里是后端返回的电子病历内容...");
-    setShowMedicalRecord(true);
-  };
+const handleTerminate = async () => {
+  const result = await sendStateToBackend(1);   // 这里能拿到后端返回值
+  if (result && result.file_url) {
+    setMedicalRecordContent(`病历文件生成成功：${result.file_url}`);
+  } else {
+    setMedicalRecordContent("未收到病历文件链接。");
+  }
+  setShowMedicalRecord(true);
+};
 
   // 处理确认打印
   const handleConfirmPrint = async () => {
