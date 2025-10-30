@@ -18,6 +18,7 @@ import {
   Animated,
   Switch,
   AppState,
+  Modal,
 } from "react-native"
 import { useFocusEffect } from "@react-navigation/native"
 import ChatView from "./DigitalHuman/ChatView"
@@ -27,10 +28,9 @@ import Icon from "react-native-vector-icons/Ionicons"
 import UserEval from "./DigitalHuman/UserEval"
 import Admin from "./DigitalHuman/Admin"
 import WebRTCManager from "./utils/WebRTCManager"
+import ConfigManager from './utils/ConfigManager';
 const { width, height } = Dimensions.get("window")
 const ChooseVideoTypes = ["肩", "桡骨", "膝", "踝", "俯卧撑","康复操"]
-const [showMedicalRecord, setShowMedicalRecord] = useState(false);
-const [medicalRecordContent, setMedicalRecordContent] = useState(''); // 存储后端返回的病历内容
 
 // 添加响应式设计辅助函数
 const normalize = (size) => {
@@ -58,6 +58,8 @@ const DigitalHumanScreen = ({ navigation }) => {
   const chatRef = useRef(null)
   const scrollViewRef = useRef(null)
   const appState = useRef(AppState.currentState)
+  const [showMedicalRecord, setShowMedicalRecord] = useState(false);
+  const [medicalRecordContent, setMedicalRecordContent] = useState(''); // 存储后端返回的病历内容
 
   // 处理应用状态变化
   useEffect(() => {
@@ -376,25 +378,36 @@ const DigitalHumanScreen = ({ navigation }) => {
   }
 
   // 电子病历相关逻辑
-    // 发送状态到后端的函数
+  // 发送状态到后端的函数
   const sendStateToBackend = async (state) => {
-  try {
-    const baseUrl = ConfigManager.getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/medical-record/state/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ state }),
-    });
-    const data = await response.json();   // 获取后端返回的 JSON
-    return data;                          // 返回给调用者
-  } catch (error) {
-    console.error("发送状态失败:", error);
-    return null;
-  }
-};
-
+    try {
+      // 检查ConfigManager是否存在
+      if (!ConfigManager || !ConfigManager.getApiBaseUrl) {
+        throw new Error("配置管理器未正确初始化");
+      }
+      
+      const baseUrl = ConfigManager.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/api/medical-record/state/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ state }),
+      });
+      
+      // 检查响应是否成功
+      if (!response.ok) {
+        throw new Error(`HTTP错误: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("发送状态失败:", error);
+      Alert.alert("错误", `操作失败: ${error.message}`);
+      return null;
+    }
+  };
   // 处理终止并生成病历
 const handleTerminate = async () => {
   const result = await sendStateToBackend(1);   // 这里能拿到后端返回值
@@ -577,6 +590,14 @@ const handleTerminate = async () => {
               ))}
             </ScrollView>
           </Animated.View>
+          
+          {/* 终止按钮（放在输入框上方） */}
+          <TouchableOpacity 
+            style={styles.terminateButton}
+            onPress={handleTerminate}
+          >
+            <Text style={styles.terminateButtonText}>终止（生成病历）</Text>
+          </TouchableOpacity>
 
           {/* 输入区域 - 固定在底部 */}
           <View style={styles.inputWrapper}>
@@ -587,15 +608,6 @@ const handleTerminate = async () => {
                 <Text style={styles.loadingIndicatorText}>AI思考中...</Text>
               </View>
             )}
-            <View style={styles.terminateButtonContainer}>
-              <TouchableOpacity
-                style={styles.terminateButton}
-                onPress={handleTerminate}
-                disabled={!isConnected} // 未连接时禁用
-              >
-                <Text style={styles.terminateButtonText}>终止（生成病历）</Text>
-              </TouchableOpacity>
-            </View>
             <ChatView 
               sessionId={sessionId} 
               isConnected={isConnected} 
@@ -604,6 +616,7 @@ const handleTerminate = async () => {
               navigation={navigation}
               messages={messages}
               setMessages={setMessages}
+              onVoiceInput={handleVoiceInput}
               ref={chatRef}
               showOnlyInput={true}
             />
@@ -779,21 +792,18 @@ const styles = StyleSheet.create({
     fontSize: normalize(16),
   },
   chatContainer: {
-    position: "absolute",
-    bottom: 0,
+    position: 'absolute',
+    bottom: 0, // 固定在底部
     left: 0,
     right: 0,
-    maxHeight: height * 0.6,
-    borderTopLeftRadius: normalize(20),
-    borderTopRightRadius: normalize(20),
-    overflow: "hidden",
-    zIndex: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.55)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderTopLeftRadius: normalize(12),
+    borderTopRightRadius: normalize(12),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
   },
 
   chatHidden: {
@@ -823,8 +833,8 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   messagesWrapper: {
-    width: "100%",
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    overflow: 'hidden', // 避免内容溢出
+    paddingHorizontal: normalize(10),
   },
   messagesContainer: {
     flex: 1,
@@ -860,12 +870,12 @@ const styles = StyleSheet.create({
     color: "#334155",
   },
   inputWrapper: {
-    width: "100%",
-    padding: width * 0.025,
-    paddingBottom: Platform.OS === "ios" ? height * 0.02 : height * 0.01,
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    padding: normalize(10),
+    flexDirection: 'row', // 输入框和发送按钮水平排列
+    alignItems: 'center',
+    gap: normalize(8),
     borderTopWidth: 1,
-    borderTopColor: "rgba(203, 213, 224, 0.5)",
+    borderTopColor: 'rgba(203, 213, 224, 0.5)',
   },
   connectButtonWrapper: {
     flexDirection: "row",
@@ -1016,15 +1026,17 @@ const styles = StyleSheet.create({
     margin: 10,
   },
   terminateButton: {
+    width: '100%',
+    padding: normalize(12),
     backgroundColor: '#ef4444',
-    padding: 12,
-    borderRadius: 8,
+    borderRadius: normalize(8),
+    marginBottom: normalize(10),
     alignItems: 'center',
   },
   terminateButtonText: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: normalize(16),
+    fontWeight: '500',
   },
   
   modalContainer: {
