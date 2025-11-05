@@ -386,13 +386,16 @@ const DigitalHumanScreen = ({ navigation }) => {
         throw new Error("配置管理器未正确初始化");
       }
       
-      const baseUrl = ConfigManager.getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/api/medical-record/state/`, {
-        method: "POST",
+      const baseUrl = ConfigManager.getDigitalHumanUrl();
+      const response = await fetch(`${baseUrl}/human`, {
+        body: JSON.stringify({
+          type: "print",
+          finalize_pre: state,
+        }),
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify({ state }),
+        method: "POST",
       });
       
       // 检查响应是否成功
