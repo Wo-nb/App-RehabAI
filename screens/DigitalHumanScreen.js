@@ -422,18 +422,30 @@ const handleTerminate = async () => {
   setShowMedicalRecord(true);
 };
 
-  // 处理确认打印
+   // 处理确认打印
   const handleConfirmPrint = async () => {
-    await sendStateToBackend(3);
+    const result = await sendStateToBackend(3);
+
+    if (!result) {
+      Alert.alert("错误", "打印失败，请稍后再试");
+      return;
+    }
+
+    Alert.alert("打印任务已提交", result.message || "后端正在打印，请稍候…");
     setShowMedicalRecord(false);
-    // 这里可以添加打印逻辑
   };
 
   // 处理修改病历
   const handleModify = async () => {
-    await sendStateToBackend(2);
+    const result = await sendStateToBackend(2);
+
+    if (!result) {
+      Alert.alert("错误", "无法进入修改流程");
+      return;
+    }
+
+    Alert.alert("提示", result.message || "已进入修改流程");
     setShowMedicalRecord(false);
-    // 这里可以添加修改工作流逻辑
   };
 
   return (
