@@ -4,21 +4,20 @@ import React, { useRef, useState, useEffect } from "react"
 import {
   StyleSheet,
   View,
-  PermissionsAndroid,
-  Platform,
   StatusBar,
   Text,
   TouchableOpacity,
   SafeAreaView,
   Dimensions,
   ActivityIndicator,
-  Button,
   Alert,
   ScrollView,
   Animated,
   Switch,
   AppState,
   Modal,
+  Linking,
+  Platform,
 } from "react-native"
 import { useFocusEffect } from "@react-navigation/native"
 import ChatView from "./DigitalHuman/ChatView"
@@ -37,7 +36,7 @@ const normalize = (size) => {
   return Math.round(size * Math.min(width / 375, height / 812))
 }
 
-const DigitalHumanScreen = ({ navigation }) => {
+const DigitalHumanScreen = ({ navigation, route }) => {
   const [isConnected, setIsConnected] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [remoteVideoStream, setRemoteVideoStream] = useState(null)
@@ -59,7 +58,11 @@ const DigitalHumanScreen = ({ navigation }) => {
   const scrollViewRef = useRef(null)
   const appState = useRef(AppState.currentState)
   const [showMedicalRecord, setShowMedicalRecord] = useState(false);
-  const [medicalRecordContent, setMedicalRecordContent] = useState(''); // 存储后端返回的病历内容
+  const [medicalRecordContent, setMedicalRecordContent] = useState(''); // 存储后端返回内容
+  const [reportUrl, setReportUrl] = useState(null); // 存储报告URL
+  const [isWaitingConfirmation, setIsWaitingConfirmation] = useState(false); // 等待确认状态
+  const [nextOptions, setNextOptions] = useState({}); // 后续操作选项
+
 
   // 处理应用状态变化
   useEffect(() => {
@@ -122,6 +125,22 @@ const DigitalHumanScreen = ({ navigation }) => {
       setMessages([]) // 确保消息列表被清空
     }
   }, [])
+
+  // 监听路由参数，自动发送评估结果消息，使用 "标识" (options)
+  useEffect(() => {
+    if (route.params?.autoSendMsg && chatRef.current) {
+        const msgText = route.params.autoSendMsg;
+        
+        // 自动调用发送消息方法，并传入状态标识
+        chatRef.current.sendMessage(msgText, {
+            isAutoSend: true, // 标识：这是自动发送的
+            msgType: 'assessment_report' // 标识：这是动作评估报告
+        });
+
+        // 清除参数，防止重复发送
+        navigation.setParams({ autoSendMsg: null, assessmentScore: null });
+    }
+  }, [route.params?.autoSendMsg, isConnected]);
 
   // 添加一个函数用于添加欢迎消息
   const addWelcomeMessage = () => {
@@ -386,25 +405,34 @@ const DigitalHumanScreen = ({ navigation }) => {
         throw new Error("配置管理器未正确初始化");
       }
       
+      const textContent = `finalize_prev = ${state.toString()}`;
       const baseUrl = ConfigManager.getDigitalHumanUrl();
       const response = await fetch(`${baseUrl}/human`, {
         body: JSON.stringify({
-          type: "print",
-          finalize_pre: state,
+          text: textContent,
+          type: "chat",
+          interrupt: true,
+          sessionid: sessionId,
         }),
         headers: {
           "Content-Type": "application/json"
         },
         method: "POST",
-      });
-      
+      })
+    
       // 检查响应是否成功
       if (!response.ok) {
         throw new Error(`HTTP错误: ${response.status}`);
       }
       
-      const data = await response.json();
-      return data;
+      // 检查是否是流式响应
+      if (response.headers.get('content-type')?.includes('text/event-stream')) {
+        return response;
+      } else {
+        // 处理非流式响应
+        const data = await response.json();
+        return { data };
+      }
     } catch (error) {
       console.error("发送状态失败:", error);
       Alert.alert("错误", `操作失败: ${error.message}`);
@@ -412,15 +440,67 @@ const DigitalHumanScreen = ({ navigation }) => {
     }
   };
   // 处理终止并生成病历
-const handleTerminate = async () => {
-  const result = await sendStateToBackend(1);   // 这里能拿到后端返回值
-  if (result && result.file_url) {
-    setMedicalRecordContent(`病历文件生成成功：${result.file_url}`);
-  } else {
-    setMedicalRecordContent("未收到病历文件链接。");
-  }
-  setShowMedicalRecord(true);
-};
+  const handleTerminate = async () => {
+    try {
+      const response = await sendStateToBackend(1);
+      if (!response) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const data = line.substring(5).trim();
+              if (data === '[DONE]') break;
+              
+              try {
+                const jsonData = JSON.parse(data);
+                // 处理word-report类型消息
+                if (jsonData.id === "word-report") {
+                  const content = JSON.parse(jsonData.choices[0].delta.content);
+                  if (content.report_generated) {
+                    setMedicalRecordContent(`病历文件生成成功`);
+                    setReportUrl(content.report_url); // 保存URL
+                  } else {
+                    setMedicalRecordContent(`生成失败：${content.report_error}`);
+                    setReportUrl(null);
+                  }
+                  setShowMedicalRecord(true);
+                } 
+                // 处理等待确认状态
+                else if (jsonData.id === "waiting-confirmation") {
+                  const content = JSON.parse(jsonData.choices[0].delta.content);
+                  setNextOptions(content.next_options);
+                  setIsWaitingConfirmation(true);
+                  setMedicalRecordContent(content.message); // 显示后端返回的提示信息
+                  setShowMedicalRecord(true); // 触发弹窗显示
+                }
+                // 处理错误
+                else if (jsonData.id === "error") {
+                  setMedicalRecordContent(`处理失败: ${jsonData.choices[0].delta.content}`);
+                  setShowMedicalRecord(true);
+                }
+              } catch (e) {
+                console.error("解析流式数据错误:", e);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("处理终止操作失败:", error);
+      Alert.alert("错误", `操作失败: ${error.message}`);
+    }
+  };
 
   // 处理确认打印
   const handleConfirmPrint = async () => {
@@ -638,6 +718,17 @@ const handleTerminate = async () => {
             <Text style={styles.modalTitle}>电子病历</Text>
             <ScrollView style={styles.recordContent}>
               <Text>{medicalRecordContent}</Text>
+
+              {/* 显示Word文档链接 */}
+              {reportUrl && (
+                <TouchableOpacity 
+                  style={styles.documentLink}
+                  onPress={() => Linking.openURL(reportUrl)}
+                >
+                  <Text style={styles.linkText}>点击查看完整病历文档</Text>
+                </TouchableOpacity>
+              )}
+
             </ScrollView>
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1092,6 +1183,18 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  documentLink: {
+  marginTop: normalize(15),
+  padding: normalize(10),
+  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  borderRadius: normalize(5),
+  alignItems: 'center',
+  },
+  linkText: {
+    color: '#3b82f6',
+    fontSize: normalize(16),
+    textDecorationLine: 'underline',
   },
 })
 

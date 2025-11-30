@@ -21,14 +21,17 @@ import Icon from "react-native-vector-icons/Ionicons"
 import ChooseVideo from "./MotionAssess/ChooseVideo"
 import ShowCamera from "./MotionAssess/ShowCamera"
 import ShowResult from "./MotionAssess/ShowResult"
+import MotionHistory from "./MotionAssess/MotionHistory" 
+import ConfigManager from './utils/ConfigManager'
 
 const { width, height } = Dimensions.get("window")
 
 // Backend API URL
-const API_BASE_URL = "https://yfvideo.hf.free4inno.com"
+// const API_BASE_URL = "https://yfvideo.hf.free4inno.com" // 原来的常量，现在通过ConfigManager获取
 
 const MotionAssessmentScreen = ({ navigation, route }) => {
- 
+  const API_BASE_URL = ConfigManager.getApiBaseUrl();
+
   const [selectedStandardVideo, setSelectedStandardVideo] = useState(null)
   const [userVideoRecorded, setUserVideoRecorded] = useState(false)
   const [userVideoPath, setUserVideoPath] = useState(null)
@@ -41,6 +44,9 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
   const [resultData, setResultData] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [cameraPosition, setCameraPosition] = useState("front")
+
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyRecordId, setHistoryRecordId] = useState(null)
 
   const cameraRef = useRef(null)
   const device = useCameraDevice(cameraPosition)
@@ -242,6 +248,8 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
         setUploadProgress(100)
         setResultData(uploadResult)
         setIsEvaluating(false)
+        setShowHistory(false)
+        setHistoryRecordId(null) 
         setShowResults(true)
       }, 2000)
     } catch (error) {
@@ -259,6 +267,14 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
     setShowResults(false)
     setResultData(null)
     setUploadProgress(0)
+    setHistoryRecordId(null)
+  }
+
+  const handleSelectHistoryRecord = (record) => {
+    setResultData(record.data)
+    setHistoryRecordId(record.id)
+    setShowHistory(false)
+    setShowResults(true)
   }
 
   return (
@@ -282,9 +298,17 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
           <Icon name="arrow-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>动作评估</Text>
+        
+        <TouchableOpacity 
+          style={styles.historyButton}
+          onPress={() => setShowHistory(true)}
+        >
+          <Icon name="time-outline" size={24} color="#3b82f6" />
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={styles.helpButton}
-          onPress={() => Alert.alert("帮助", "动作评估功能可以帮助您评估康复动作的准确性。\n\n1. 选择标准视频\n2. 录制您的动作\n3. 开始评估\n4. 查看结果")}
+          onPress={() => Alert.alert("帮助", "动作评估功能可以帮助您评估康复动作的准确性。\n\n1. 选择标准视频\n2. 录制您的动作\n3. 开始评估\n4. 查看结果\n\n点击左侧时钟图标可查看历史评估记录。")}
         >
           <Icon name="help-circle-outline" size={24} color="#3b82f6" />
         </TouchableOpacity>
@@ -292,7 +316,23 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
       
       {/* 主内容区域 */}
       <View style={styles.contentContainer}>
-        {!showResults ? (
+        {showHistory ? (
+           <MotionHistory 
+             onSelectRecord={handleSelectHistoryRecord}
+             onClose={() => setShowHistory(false)}
+           />
+        ) : showResults ? (
+          <View style={styles.resultContainer}>
+            <ShowResult
+              resultData={resultData}
+              onReset={handleReset}
+              customStyles={resultStyles}
+              recordId={historyRecordId}
+              navigation={navigation}
+              bodyPart={selectedBodyPart || (selectedStandardVideo ? selectedStandardVideo.tag_string : '康复动作')}
+            />
+          </View>
+        ) : (
           <View style={styles.chooseVideoContainer}>
             <ChooseVideo
               selectedBodyPart={selectedBodyPart}
@@ -301,14 +341,6 @@ const MotionAssessmentScreen = ({ navigation, route }) => {
               onSelectStandardVideo={handleSelectStandardVideo}
               onStartRecording={handleStartRecording}
               onStartEvaluation={handleStartEvaluation}
-            />
-          </View>
-        ) : (
-          <View style={styles.resultContainer}>
-            <ShowResult
-              resultData={resultData}
-              onReset={handleReset}
-              customStyles={resultStyles}
             />
           </View>
         )}
@@ -515,6 +547,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#334155',
+  },
+  historyButton: {
+    position: 'absolute',
+    right: 70, 
+    top: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight + 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   helpButton: {
     position: 'absolute',

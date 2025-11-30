@@ -1,13 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Image } from "react-native"
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Image, TextInput, Alert } from "react-native"
 import { LineChart } from "react-native-chart-kit"
 import HlsVideo from "./HlsVideo"
+import Ionicons from "react-native-vector-icons/Ionicons"
+import LinearGradient from "react-native-linear-gradient"
+import MotionHistoryManager from "../utils/MotionHistoryManager"
+
 const { width } = Dimensions.get("window")
 const API_BASE_URL = "https://yfvideo.hf.free4inno.com"
 
-const ShowResult = ({ resultData, onReset }) => {
+const ShowResult = ({ resultData, onReset, recordId, navigation, bodyPart }) => {
   const [evaluationScore, setEvaluationScore] = useState(0)
   const [frameScores, setFrameScores] = useState({
     labels: [],
@@ -19,6 +23,10 @@ const ShowResult = ({ resultData, onReset }) => {
   const [overlapVideoHLS, setOverlapVideoHLS] = useState("")
   const [videoVisible, setVideoVisible] = useState(false)
   const [currentVideoHLS, setCurrentVideoHLS] = useState("")
+  
+  // 新增：反馈和记录ID状态
+  const [feedback, setFeedback] = useState("")
+  const [currentRecordId, setCurrentRecordId] = useState(recordId)
 
   useEffect(() => {
     if (resultData) {
@@ -58,13 +66,68 @@ const ShowResult = ({ resultData, onReset }) => {
       setStandardVideoHLS(API_BASE_URL + resultData.standard_video_hls)
       setExerciseVideoHLS(API_BASE_URL + resultData.exercise_video_hls)
       setOverlapVideoHLS(API_BASE_URL + resultData.overlap_video_hls)
+      
+      // 自动保存逻辑：如果是新评估（无传入ID），则自动保存
+      const handleAutoSave = async () => {
+        if (!recordId && !currentRecordId) {
+            const savedRecord = await MotionHistoryManager.saveRecord(resultData, bodyPart);
+            if (savedRecord) {
+                setCurrentRecordId(savedRecord.id);
+            }
+        }
+      };
+      handleAutoSave();
     }
-  }, [resultData])
+  }, [resultData, recordId])
+
+  // 加载已有反馈
+  useEffect(() => {
+    const loadFeedback = async () => {
+      const id = recordId || currentRecordId;
+      if (id) {
+        const history = await MotionHistoryManager.getHistory();
+        const record = history.find(item => item.id === id);
+        if (record && record.userFeedback) {
+          setFeedback(record.userFeedback);
+        }
+      }
+    };
+    loadFeedback();
+  }, [recordId, currentRecordId]);
 
   const handleVideoPress = (videoHLS) => {
     setCurrentVideoHLS(videoHLS)
     setVideoVisible(true)
   }
+
+  // 保存反馈
+  const handleSaveFeedback = async () => {
+    const id = recordId || currentRecordId;
+    if (!id) return;
+    
+    const success = await MotionHistoryManager.updateFeedback(id, feedback);
+    if (success) {
+      Alert.alert("成功", "反馈已保存");
+    } else {
+      Alert.alert("错误", "保存失败");
+    }
+  };
+
+  // 发送给数字人
+  const handleSendToDigitalHuman = () => {
+    if (!navigation) {
+        console.error("Navigation prop missing");
+        return;
+    }
+    
+    const scoreText = evaluationScore.toFixed(1);
+    const summary = `我刚刚完成了${bodyPart || '康复'}动作评估，得分为 ${scoreText} 分。请针对我的表现给出康复建议。`;
+    
+    navigation.navigate("DigitalHuman", {
+        autoSendMsg: summary,
+        assessmentScore: scoreText
+    });
+  };
 
   return (
     <ScrollView style={styles.resultsContainer} contentContainerStyle={styles.resultsContent}>
@@ -174,8 +237,37 @@ const ShowResult = ({ resultData, onReset }) => {
 
       <HlsVideo visible={videoVisible} videoId={currentVideoHLS} onClose={() => setVideoVisible(false)} />
 
+      {/* 用户反馈区域 */}
+      <View style={styles.feedbackContainer}>
+        <Text style={styles.feedbackTitle}>用户反馈/备注</Text>
+        <TextInput
+            style={styles.feedbackInput}
+            placeholder="记录下您的感受，或对本次评估的看法..."
+            multiline
+            value={feedback}
+            onChangeText={setFeedback}
+        />
+        <TouchableOpacity style={styles.saveFeedbackButton} onPress={handleSaveFeedback}>
+            <Text style={styles.saveFeedbackText}>保存反馈</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 发送给数字人按钮 */}
+      <TouchableOpacity 
+        style={styles.consultButton} 
+        onPress={handleSendToDigitalHuman}
+      >
+        <LinearGradient
+          colors={['#8b5cf6', '#6366f1']}
+          style={styles.consultGradient}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={24} color="white" />
+          <Text style={styles.consultButtonText}>发送结果给数字人咨询</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.resetButton} onPress={onReset}>
-        <Text style={styles.resetButtonText}>重新选择</Text>
+        <Text style={styles.resetButtonText}>返回 / 重新选择</Text>
       </TouchableOpacity>
     </ScrollView>
   )
@@ -270,7 +362,6 @@ const styles = StyleSheet.create({
     color: "#334155",
     marginBottom: 15,
   },
-
   worstImages: {
     width: 100,
     height: 100,
@@ -278,7 +369,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#f1f5f9",
   },
-
   worstFramesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -340,6 +430,67 @@ const styles = StyleSheet.create({
   noDataText: {
     color: "#64748b",
     fontSize: 16,
+  },
+  feedbackContainer: {
+    backgroundColor: "white",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  feedbackTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 10,
+    color: "#334155",
+  },
+  feedbackInput: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    padding: 10,
+    height: 80,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 10,
+  },
+  saveFeedbackButton: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#64748b',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  saveFeedbackText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  consultButton: {
+    marginBottom: 15,
+    borderRadius: 15,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  consultGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 10,
+  },
+  consultButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 })
 

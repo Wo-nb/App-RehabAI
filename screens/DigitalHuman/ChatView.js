@@ -47,7 +47,6 @@ const ChatView = forwardRef(({
   useEffect(() => {
     if (audioStream) {
       console.log("Audio stream available in ChatView")
-
       if (Platform.OS === "web") {
         const audioElement = new Audio()
         audioElement.srcObject = audioStream
@@ -144,11 +143,12 @@ const ChatView = forwardRef(({
       setIsStreaming(false)
       setInput("")
       // 不清空messages，因为这是由父组件管理的
-    }
+    },
+    sendMessage: (text, options) => handleSendMessage(text, options),
+    startStreaming: (text) => startStreaming(text)
   }));
 
   const startStreaming = (text) => {
-    // 清除之前的流式输出
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current)
     }
@@ -157,7 +157,6 @@ const ChatView = forwardRef(({
     setStreamIndex(0)
     setIsStreaming(true)
 
-    // 添加一个初始的空消息，后续会更新这条消息
     const aiResponse = {
       id: Date.now() + 1,
       text: "",
@@ -166,25 +165,34 @@ const ChatView = forwardRef(({
     setMessages((prev) => [...prev, aiResponse])
   }
 
-  const handleSendMessage = async () => {
-    if (input.trim() === "") return
+  const handleSendMessage = async (customText = null, options = {}) => {
+    const textToSend = customText || input
+    if (textToSend.trim() === "") return
+
+    const { isAutoSend = false, msgType = 'normal' } = options;
 
     const userMessage = {
       id: Date.now(),
-      text: input,
+      text: textToSend,
       isUser: true,
+      msgType: msgType, 
     }
 
-    setMessages([...messages, userMessage])
-    setInput("")
+    setMessages(prev => [...prev, userMessage])
+    
+    // 如果是自动发送（如动作评估结果），不要清空用户的输入框
+    if (!customText && !isAutoSend) {
+        setInput("")
+    }
+    
     setIsLoading(true)
-    console.log("发送给服务器的文本：", input.trim())
+    console.log(`发送给服务器的文本 (${msgType}):`, textToSend.trim())
 
     try {
       const digitalHumanUrl = ConfigManager.getDigitalHumanUrl();
       const response = await fetch(`${digitalHumanUrl}/human`, {
         body: JSON.stringify({
-          text: input.trim(),
+          text: textToSend.trim(),
           type: "chat",
           interrupt: true,
           sessionid: sessionId,
@@ -362,7 +370,7 @@ const ChatView = forwardRef(({
               input.trim() === "" && styles.sendButtonDisabled,
               type === "secondary" && styles.secondarySendButton
             ]}
-            onPress={handleSendMessage}
+            onPress={() => handleSendMessage()} // 这里是用户手动点击，默认 isAutoSend=false
             disabled={input.trim() === ""}
           >
             <Icon 
